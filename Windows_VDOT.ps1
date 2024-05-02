@@ -25,13 +25,13 @@
 
 ######################################################################################################################################>
 
-[Cmdletbinding(DefaultParameterSetName="Default")]
+[Cmdletbinding(DefaultParameterSetName = "Default")]
 Param (
     # Parameter help description
     [ArgumentCompleter( { Get-ChildItem $PSScriptRoot -Directory | Where-Object { $_.Name -ne 'LGPO' } | Select-Object -ExpandProperty Name } )]
     [System.String]$WindowsVersion = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\").ReleaseId,
 
-    [ValidateSet('All','WindowsMediaPlayer','AppxPackages','ScheduledTasks','DefaultUserSettings','Autologgers','Services','NetworkOptimizations','LGPO','DiskCleanup')] 
+    [ValidateSet('All', 'WindowsMediaPlayer', 'AppxPackages', 'ScheduledTasks', 'DefaultUserSettings', 'Autologgers', 'Services', 'NetworkOptimizations', 'LGPO', 'DiskCleanup')] 
     [String[]]
     $Optimizations,
 
@@ -40,8 +40,7 @@ Param (
     [String[]]
     $AdvancedOptimizations,
 
-    [Switch]$Restart,
-    [Switch]$AcceptEULA
+    [Switch]$Restart
 )
 
 #Requires -RunAsAdministrator
@@ -89,50 +88,42 @@ The UWP app input file contains the list of almost all the UWP application packa
 The Store and a few others, such as Wallet, were left off intentionally.  Though it is possible to remove the Store app, 
 it is nearly impossible to get it back.  Please review the configuration files and change the 'VDIState' to anything but 'disabled' to keep the item.
 #>
-BEGIN 
-{
+BEGIN {
     [Version]$VDOTVersion = "2.1.2009.1" 
     # Create Key
     $KeyPath = 'HKLM:\SOFTWARE\VDOT'
-    If (-Not(Test-Path $KeyPath))
-    {
+    If (-Not(Test-Path $KeyPath)) {
         New-Item -Path $KeyPath | Out-Null
     }
 
     # Add VDOT Version Key
     $Version = "Version"
     $VersionValue = $VDOTVersion
-    If (Get-ItemProperty $KeyPath -Name Version -ErrorAction SilentlyContinue)
-    {
+    If (Get-ItemProperty $KeyPath -Name Version -ErrorAction SilentlyContinue) {
         Set-ItemProperty -Path $KeyPath -Name $Version -Value $VersionValue
     }
-    Else
-    {
+    Else {
         New-ItemProperty -Path $KeyPath -Name $Version -Value $VersionValue | Out-Null
     }
 
     # Add VDOT Last Run
     $LastRun = "LastRunTime"
     $LastRunValue = Get-Date
-    If (Get-ItemProperty $KeyPath -Name LastRunTime -ErrorAction SilentlyContinue)
-    {
+    If (Get-ItemProperty $KeyPath -Name LastRunTime -ErrorAction SilentlyContinue) {
         Set-ItemProperty -Path $KeyPath -Name $LastRun -Value $LastRunValue
     }
-    Else
-    {
+    Else {
         New-ItemProperty -Path $KeyPath -Name $LastRun -Value $LastRunValue | Out-Null
     }
     
     $EventSources = @('VDOT', 'WindowsMediaPlayer', 'AppxPackages', 'ScheduledTasks', 'DefaultUserSettings', 'Autologgers', 'Services', 'NetworkOptimizations', 'LGPO', 'AdvancedOptimizations', 'DiskCleanup')
-    If (-not([System.Diagnostics.EventLog]::SourceExists("Virtual Desktop Optimization")))
-    {
+    If (-not([System.Diagnostics.EventLog]::SourceExists("Virtual Desktop Optimization"))) {
         # All VDOT main function Event ID's [1-9]
         New-EventLog -Source $EventSources -LogName 'Virtual Desktop Optimization'
         Limit-EventLog -OverflowAction OverWriteAsNeeded -MaximumSize 64KB -LogName 'Virtual Desktop Optimization'
         Write-EventLog -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Information -EventId 1 -Message "Log Created"
     }
-    Else 
-    {
+    Else {
         New-EventLog -Source $EventSources -LogName 'Virtual Desktop Optimization' -ErrorAction SilentlyContinue
     }
     Write-EventLog -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Information -EventId 1 -Message "Starting VDOT by user '$env:USERNAME', for VDOT build '$WindowsVersion', with the following options:`n$($PSBoundParameters | Out-String)" 
@@ -141,12 +132,10 @@ BEGIN
     $CurrentLocation = Get-Location
     $WorkingLocation = (Join-Path $PSScriptRoot $WindowsVersion)
 
-    try
-    {
+    try {
         Push-Location (Join-Path $PSScriptRoot $WindowsVersion)-ErrorAction Stop
     }
-    catch
-    {
+    catch {
         $Message = "Invalid Path $WorkingLocation - Exiting Script!"
         Write-EventLog -Message $Message -Source 'VDOT' -EventID 100 -EntryType Error -LogName 'Virtual Desktop Optimization'
         Write-Warning $Message
@@ -154,8 +143,7 @@ BEGIN
     }
 }
 PROCESS {
-    if (-not ($PSBoundParameters.Keys -match 'Optimizations') )
-    {
+    if (-not ($PSBoundParameters.Keys -match 'Optimizations') ) {
         Write-EventLog -Message "No Optimizations (Optimizations or AdvancedOptimizations) passed, exiting script!" -Source 'VDOT' -EventID 100 -EntryType Error -LogName 'Virtual Desktop Optimization'
         $Message = "`nThe Optimizations parameter no longer defaults to 'All', you must explicitly pass in this parameter.`nThis is to allow for running 'AdvancedOptimizations' separately " 
         Write-Host " * " -ForegroundColor black -BackgroundColor yellow -NoNewline
@@ -164,41 +152,10 @@ PROCESS {
         Write-Host $Message -ForegroundColor yellow -BackgroundColor black
         Return
     }
-    $EULA = Get-Content ..\EULA.txt
-    If (-not($AcceptEULA))
-    {
-        $Title = "Accept EULA"
-        $Message = ""
-        $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes"
-        $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No"
-        $Options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
-        $EULA
-        $Response = $host.UI.PromptForChoice($Title, $Message, $Options, 0)
-        If ($Response -eq 0)
-        {
-            Write-EventLog -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Information -EventId 1 -Message "EULA Accepted"
-        }
-        Else
-        {
-            Write-EventLog -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Warning -EventId 1 -Message "EULA Declined, exiting!"
-            Set-Location $CurrentLocation
-            $EndTime = Get-Date
-            $ScriptRunTime = New-TimeSpan -Start $StartTime -End $EndTime
-            Write-EventLog -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Information -EventId 1 -Message "VDOT Total Run Time: $($ScriptRunTime.Hours) Hours $($ScriptRunTime.Minutes) Minutes $($ScriptRunTime.Seconds) Seconds"
-            Write-Host "`n`nThank you from the Virtual Desktop Optimization Team" -ForegroundColor Cyan
-
-            continue
-        }
-    }
-    Else 
-    {
-        Write-EventLog -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Information -EventId 1 -Message "EULA Accepted by Parameter" 
-    }
 
     #region Disable, then remove, Windows Media Player including payload
     If ($Optimizations -contains "WindowsMediaPlayer" -or $Optimizations -contains "All") {
-        try
-        {
+        try {
             Write-EventLog -EventId 10 -Message "[VDI Optimize] Disable / Remove Windows Media Player" -LogName 'Virtual Desktop Optimization' -Source 'WindowsMediaPlayer' -EntryType Information 
             Write-Host "[VDI Optimize] Disable / Remove Windows Media Player" -ForegroundColor Cyan
             Disable-WindowsOptionalFeature -Online -FeatureName WindowsMediaPlayer -NoRestart | Out-Null
@@ -207,28 +164,22 @@ PROCESS {
                 Remove-WindowsPackage -PackageName $_.PackageName -Online -ErrorAction SilentlyContinue -NoRestart | Out-Null
             }
         }
-        catch 
-        { 
+        catch { 
             Write-EventLog -EventId 110 -Message "Disabling / Removing Windows Media Player - $($_.Exception.Message)" -LogName 'Virtual Desktop Optimization' -Source 'WindowsMediaPlayer' -EntryType Error 
         }
     }
     #endregion
 
     #region Begin Clean APPX Packages
-    If ($Optimizations -contains "AppxPackages" -or $Optimizations -contains "All")
-    {
+    If ($Optimizations -contains "AppxPackages" -or $Optimizations -contains "All") {
         $AppxConfigFilePath = ".\ConfigurationFiles\AppxPackages.json"
-        If (Test-Path $AppxConfigFilePath)
-        {
+        If (Test-Path $AppxConfigFilePath) {
             Write-EventLog -EventId 20 -Message "[VDI Optimize] Removing Appx Packages" -LogName 'Virtual Desktop Optimization' -Source 'AppxPackages' -EntryType Information 
             Write-Host "[VDI Optimize] Removing Appx Packages" -ForegroundColor Cyan
             $AppxPackage = (Get-Content $AppxConfigFilePath | ConvertFrom-Json).Where( { $_.VDIState -eq 'Disabled' })
-            If ($AppxPackage.Count -gt 0)
-            {
-                Foreach ($Item in $AppxPackage)
-                {
-                    try
-                    {                
+            If ($AppxPackage.Count -gt 0) {
+                Foreach ($Item in $AppxPackage) {
+                    try {                
                         Write-EventLog -EventId 20 -Message "Removing Provisioned Package $($Item.AppxPackage)" -LogName 'Virtual Desktop Optimization' -Source 'AppxPackages' -EntryType Information 
                         Write-Verbose "Removing Provisioned Package $($Item.AppxPackage)"
                         Get-AppxProvisionedPackage -Online | Where-Object { $_.PackageName -like ("*{0}*" -f $Item.AppxPackage) } | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Out-Null
@@ -241,21 +192,18 @@ PROCESS {
                         Write-Verbose "Attempting to remove $($Item.AppxPackage) - $($Item.Description)"
                         Get-AppxPackage -Name ("*{0}*" -f $Item.AppxPackage) | Remove-AppxPackage -ErrorAction SilentlyContinue | Out-Null
                     }
-                    catch 
-                    {
+                    catch {
                         Write-EventLog -EventId 120 -Message "Failed to remove Appx Package $($Item.AppxPackage) - $($_.Exception.Message)" -LogName 'Virtual Desktop Optimization' -Source 'AppxPackages' -EntryType Error 
                         Write-Warning "Failed to remove Appx Package $($Item.AppxPackage) - $($_.Exception.Message)"
                     }
                 }
             }
-            Else 
-            {
+            Else {
                 Write-EventLog -EventId 20 -Message "No AppxPackages found to disable" -LogName 'Virtual Desktop Optimization' -Source 'AppxPackages' -EntryType Warning 
                 Write-Warning "No AppxPackages found to disable in $AppxConfigFilePath"
             }
         }
-        Else 
-        {
+        Else {
 
             Write-EventLog -EventId 20 -Message "Configuration file not found - $AppxConfigFilePath" -LogName 'Virtual Desktop Optimization' -Source 'AppxPackages' -EntryType Warning 
             Write-Warning "Configuration file not found -  $AppxConfigFilePath"
@@ -270,47 +218,37 @@ PROCESS {
     # change its "VDIState" from Disabled to Enabled, or remove it from the json completely.
     If ($Optimizations -contains 'ScheduledTasks' -or $Optimizations -contains "All") {
         $ScheduledTasksFilePath = ".\ConfigurationFiles\ScheduledTasks.json"
-        If (Test-Path $ScheduledTasksFilePath)
-        {
+        If (Test-Path $ScheduledTasksFilePath) {
             Write-EventLog -EventId 30 -Message "[VDI Optimize] Disable Scheduled Tasks" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Information 
             Write-Host "[VDI Optimize] Disable Scheduled Tasks" -ForegroundColor Cyan
             $SchTasksList = (Get-Content $ScheduledTasksFilePath | ConvertFrom-Json).Where( { $_.VDIState -eq 'Disabled' })
-            If ($SchTasksList.count -gt 0)
-            {
-                Foreach ($Item in $SchTasksList)
-                {
+            If ($SchTasksList.count -gt 0) {
+                Foreach ($Item in $SchTasksList) {
                     $TaskObject = Get-ScheduledTask $Item.ScheduledTask
-                    If ($TaskObject -and $TaskObject.State -ne 'Disabled')
-                    {
+                    If ($TaskObject -and $TaskObject.State -ne 'Disabled') {
                         Write-EventLog -EventId 30 -Message "Attempting to disable Scheduled Task: $($TaskObject.TaskName)" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Information 
                         Write-Verbose "Attempting to disable Scheduled Task: $($TaskObject.TaskName)"
-                        try
-                        {
+                        try {
                             Disable-ScheduledTask -InputObject $TaskObject | Out-Null
                             Write-EventLog -EventId 30 -Message "Disabled Scheduled Task: $($TaskObject.TaskName)" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Information 
                         }
-                        catch
-                        {
+                        catch {
                             Write-EventLog -EventId 130 -Message "Failed to disabled Scheduled Task: $($TaskObject.TaskName) - $($_.Exception.Message)" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Error 
                         }
                     }
-                    ElseIf ($TaskObject -and $TaskObject.State -eq 'Disabled') 
-                    {
+                    ElseIf ($TaskObject -and $TaskObject.State -eq 'Disabled') {
                         Write-EventLog -EventId 30 -Message "$($TaskObject.TaskName) Scheduled Task is already disabled - $($_.Exception.Message)" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Warning
                     }
-                    Else
-                    {
+                    Else {
                         Write-EventLog -EventId 130 -Message "Unable to find Scheduled Task: $($TaskObject.TaskName) - $($_.Exception.Message)" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Error
                     }
                 }
             }
-            Else
-            {
+            Else {
                 Write-EventLog -EventId 30 -Message "No Scheduled Tasks found to disable" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Warning
             }
         }
-        Else 
-        {
+        Else {
             Write-EventLog -EventId 30 -Message "File not found! -  $ScheduledTasksFilePath" -LogName 'Virtual Desktop Optimization' -Source 'ScheduledTasks' -EntryType Warning
         }
     }
@@ -319,58 +257,46 @@ PROCESS {
     #region Customize Default User Profile
 
     # Apply appearance customizations to default user registry hive, then close hive file
-    If ($Optimizations -contains "DefaultUserSettings" -or $Optimizations -contains "All")
-    {
+    If ($Optimizations -contains "DefaultUserSettings" -or $Optimizations -contains "All") {
         $DefaultUserSettingsFilePath = ".\ConfigurationFiles\DefaultUserSettings.json"
-        If (Test-Path $DefaultUserSettingsFilePath)
-        {
+        If (Test-Path $DefaultUserSettingsFilePath) {
             Write-EventLog -EventId 40 -Message "Set Default User Settings" -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Information
             Write-Host "[VDI Optimize] Set Default User Settings" -ForegroundColor Cyan
             $UserSettings = (Get-Content $DefaultUserSettingsFilePath | ConvertFrom-Json).Where( { $_.SetProperty -eq $true })
-            If ($UserSettings.Count -gt 0)
-            {
+            If ($UserSettings.Count -gt 0) {
                 Write-EventLog -EventId 40 -Message "Processing Default User Settings (Registry Keys)" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Information
                 Write-Verbose "Processing Default User Settings (Registry Keys)"
                 $null = Start-Process reg -ArgumentList "LOAD HKLM\VDOT_TEMP C:\Users\Default\NTUSER.DAT" -PassThru -Wait
                 # & REG LOAD HKLM\VDOT_TEMP C:\Users\Default\NTUSER.DAT | Out-Null
 
-                Foreach ($Item in $UserSettings)
-                {
-                    If ($Item.PropertyType -eq "BINARY")
-                    {
+                Foreach ($Item in $UserSettings) {
+                    If ($Item.PropertyType -eq "BINARY") {
                         $Value = [byte[]]($Item.PropertyValue.Split(","))
                     }
-                    Else
-                    {
+                    Else {
                         $Value = $Item.PropertyValue
                     }
 
-                    If (Test-Path -Path ("{0}" -f $Item.HivePath))
-                    {
+                    If (Test-Path -Path ("{0}" -f $Item.HivePath)) {
                         Write-EventLog -EventId 40 -Message "Found $($Item.HivePath) - $($Item.KeyName)" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Information        
                         Write-Verbose "Found $($Item.HivePath) - $($Item.KeyName)"
-                        If (Get-ItemProperty -Path ("{0}" -f $Item.HivePath) -ErrorAction SilentlyContinue)
-                        {
+                        If (Get-ItemProperty -Path ("{0}" -f $Item.HivePath) -ErrorAction SilentlyContinue) {
                             Write-EventLog -EventId 40 -Message "Set $($Item.HivePath) - $Value" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Information
                             Set-ItemProperty -Path ("{0}" -f $Item.HivePath) -Name $Item.KeyName -Value $Value -Type $Item.PropertyType -Force 
                         }
-                        Else
-                        {
+                        Else {
                             Write-EventLog -EventId 40 -Message "New $($Item.HivePath) Name $($Item.KeyName) PropertyType $($Item.PropertyType) Value $Value" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Information
                             New-ItemProperty -Path ("{0}" -f $Item.HivePath) -Name $Item.KeyName -PropertyType $Item.PropertyType -Value $Value -Force | Out-Null
                         }
                     }
-                    Else
-                    {
+                    Else {
                         Write-EventLog -EventId 40 -Message "Registry Path not found $($Item.HivePath)" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Information
                         Write-EventLog -EventId 40 -Message "Creating new Registry Key $($Item.HivePath)" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Information
                         $newKey = New-Item -Path ("{0}" -f $Item.HivePath) -Force
-                        If (Test-Path -Path $newKey.PSPath)
-                        {
+                        If (Test-Path -Path $newKey.PSPath) {
                             New-ItemProperty -Path ("{0}" -f $Item.HivePath) -Name $Item.KeyName -PropertyType $Item.PropertyType -Value $Value -Force | Out-Null
                         }
-                        Else
-                        {
+                        Else {
                             Write-EventLog -EventId 140 -Message "Failed to create new Registry Key" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Error
                         } 
                     }
@@ -378,53 +304,44 @@ PROCESS {
                 $null = Start-Process reg -ArgumentList "UNLOAD HKLM\VDOT_TEMP" -PassThru -Wait
                 # & REG UNLOAD HKLM\VDOT_TEMP | Out-Null
             }
-            Else
-            {
+            Else {
                 Write-EventLog -EventId 40 -Message "No Default User Settings to set" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Warning
             }
         }
-        Else
-        {
+        Else {
             Write-EventLog -EventId 40 -Message "File not found: $DefaultUserSettingsFilePath" -LogName 'Virtual Desktop Optimization' -Source 'DefaultUserSettings' -EntryType Warning
-        }    }
+        }    
+    }
     #endregion
 
     #region Disable Windows Traces
-    If ($Optimizations -contains "AutoLoggers" -or $Optimizations -contains "All")
-    {
+    If ($Optimizations -contains "AutoLoggers" -or $Optimizations -contains "All") {
         $AutoLoggersFilePath = ".\ConfigurationFiles\Autologgers.Json"
-        If (Test-Path $AutoLoggersFilePath)
-        {
+        If (Test-Path $AutoLoggersFilePath) {
             Write-EventLog -EventId 50 -Message "Disable AutoLoggers" -LogName 'Virtual Desktop Optimization' -Source 'AutoLoggers' -EntryType Information
             Write-Host "[VDI Optimize] Disable Autologgers" -ForegroundColor Cyan
             $DisableAutologgers = (Get-Content $AutoLoggersFilePath | ConvertFrom-Json).Where( { $_.Disabled -eq 'True' })
-            If ($DisableAutologgers.count -gt 0)
-            {
+            If ($DisableAutologgers.count -gt 0) {
                 Write-EventLog -EventId 50 -Message "Disable AutoLoggers" -LogName 'Virtual Desktop Optimization' -Source 'AutoLoggers' -EntryType Information
                 Write-Verbose "Processing Autologger Configuration File"
-                Foreach ($Item in $DisableAutologgers)
-                {
+                Foreach ($Item in $DisableAutologgers) {
                     Write-EventLog -EventId 50 -Message "Updating Registry Key for: $($Item.KeyName)" -LogName 'Virtual Desktop Optimization' -Source 'AutoLoggers' -EntryType Information
                     Write-Verbose "Updating Registry Key for: $($Item.KeyName)"
-                    Try 
-                    {
+                    Try {
                         New-ItemProperty -Path ("{0}" -f $Item.KeyName) -Name "Start" -PropertyType "DWORD" -Value 0 -Force -ErrorAction Stop | Out-Null
                     }
-                    Catch
-                    {
+                    Catch {
                         Write-EventLog -EventId 150 -Message "Failed to add $($Item.KeyName)`n`n $($Error[0].Exception.Message)" -LogName 'Virtual Desktop Optimization' -Source 'AutoLoggers' -EntryType Error
                     }
                     
                 }
             }
-            Else 
-            {
+            Else {
                 Write-EventLog -EventId 50 -Message "No Autologgers found to disable" -LogName 'Virtual Desktop Optimization' -Source 'AutoLoggers' -EntryType Warning
                 Write-Verbose "No Autologgers found to disable"
             }
         }
-        Else
-        {
+        Else {
             Write-EventLog -EventId 150 -Message "File not found: $AutoLoggersFilePath" -LogName 'Virtual Desktop Optimization' -Source 'AutoLoggers' -EntryType Error
             Write-Warning "File Not Found: $AutoLoggersFilePath"
         }
@@ -432,21 +349,17 @@ PROCESS {
     #endregion
 
     #region Disable Services
-    If ($Optimizations -contains "Services" -or $Optimizations -contains "All")
-    {
+    If ($Optimizations -contains "Services" -or $Optimizations -contains "All") {
         $ServicesFilePath = ".\ConfigurationFiles\Services.json"
-        If (Test-Path $ServicesFilePath)
-        {
+        If (Test-Path $ServicesFilePath) {
             Write-EventLog -EventId 60 -Message "Disable Services" -LogName 'Virtual Desktop Optimization' -Source 'Services' -EntryType Information
             Write-Host "[VDI Optimize] Disable Services" -ForegroundColor Cyan
             $ServicesToDisable = (Get-Content $ServicesFilePath | ConvertFrom-Json ).Where( { $_.VDIState -eq 'Disabled' })
 
-            If ($ServicesToDisable.count -gt 0)
-            {
+            If ($ServicesToDisable.count -gt 0) {
                 Write-EventLog -EventId 60 -Message "Processing Services Configuration File" -LogName 'Virtual Desktop Optimization' -Source 'Services' -EntryType Information
                 Write-Verbose "Processing Services Configuration File"
-                Foreach ($Item in $ServicesToDisable)
-                {
+                Foreach ($Item in $ServicesToDisable) {
                     #Write-EventLog -EventId 60 -Message "Attempting to Stop Service $($Item.Name) - $($Item.Description)" -LogName 'Virtual Desktop Optimization' -Source 'Services' -EntryType Information
                     #Write-Verbose "Attempting to Stop Service $($Item.Name) - $($Item.Description)"
                     #try
@@ -463,81 +376,67 @@ PROCESS {
                     Set-Service $Item.Name -StartupType Disabled 
                 }
             }  
-            Else
-            {
+            Else {
                 Write-EventLog -EventId 60 -Message "No Services found to disable" -LogName 'Virtual Desktop Optimization' -Source 'Services' -EntryType Warnnig
                 Write-Verbose "No Services found to disable"
             }
         }
-        Else
-        {
+        Else {
             Write-EventLog -EventId 160 -Message "File not found: $ServicesFilePath" -LogName 'Virtual Desktop Optimization' -Source 'Services' -EntryType Error
             Write-Warning "File not found: $ServicesFilePath"
-        }    }
+        }    
+    }
     #endregion
 
     #region Network Optimization
     # LanManWorkstation optimizations
-    If ($Optimizations -contains "NetworkOptimizations" -or $Optimizations -contains "All")
-    {
+    If ($Optimizations -contains "NetworkOptimizations" -or $Optimizations -contains "All") {
         $NetworkOptimizationsFilePath = ".\ConfigurationFiles\LanManWorkstation.json"
-        If (Test-Path $NetworkOptimizationsFilePath)
-        {
+        If (Test-Path $NetworkOptimizationsFilePath) {
             Write-EventLog -EventId 70 -Message "Configure LanManWorkstation Settings" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Information
             Write-Host "[VDI Optimize] Configure LanManWorkstation Settings" -ForegroundColor Cyan
             $LanManSettings = Get-Content $NetworkOptimizationsFilePath | ConvertFrom-Json
-            If ($LanManSettings.Count -gt 0)
-            {
+            If ($LanManSettings.Count -gt 0) {
                 Write-EventLog -EventId 70 -Message "Processing LanManWorkstation Settings ($($LanManSettings.Count) Hives)" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Information
                 Write-Verbose "Processing LanManWorkstation Settings ($($LanManSettings.Count) Hives)"
-                Foreach ($Hive in $LanManSettings)
-                {
-                    If (Test-Path -Path $Hive.HivePath)
-                    {
+                Foreach ($Hive in $LanManSettings) {
+                    If (Test-Path -Path $Hive.HivePath) {
                         Write-EventLog -EventId 70 -Message "Found $($Hive.HivePath)" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Information
                         Write-Verbose "Found $($Hive.HivePath)"
                         $Keys = $Hive.Keys.Where{ $_.SetProperty -eq $true }
-                        If ($Keys.Count -gt 0)
-                        {
+                        If ($Keys.Count -gt 0) {
                             Write-EventLog -EventId 70 -Message "Create / Update LanManWorkstation Keys" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Information
                             Write-Verbose "Create / Update LanManWorkstation Keys"
-                            Foreach ($Key in $Keys)
-                            {
-                                If (Get-ItemProperty -Path $Hive.HivePath -Name $Key.Name -ErrorAction SilentlyContinue)
-                                {
+                            Foreach ($Key in $Keys) {
+                                If (Get-ItemProperty -Path $Hive.HivePath -Name $Key.Name -ErrorAction SilentlyContinue) {
                                     Write-EventLog -EventId 70 -Message "Setting $($Hive.HivePath) -Name $($Key.Name) -Value $($Key.PropertyValue)" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Information
                                     Write-Verbose "Setting $($Hive.HivePath) -Name $($Key.Name) -Value $($Key.PropertyValue)"
                                     Set-ItemProperty -Path $Hive.HivePath -Name $Key.Name -Value $Key.PropertyValue -Force
                                 }
-                                Else
-                                {
+                                Else {
                                     Write-EventLog -EventId 70 -Message "New $($Hive.HivePath) -Name $($Key.Name) -Value $($Key.PropertyValue)" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Information
                                     Write-Host "New $($Hive.HivePath) -Name $($Key.Name) -Value $($Key.PropertyValue)"
                                     New-ItemProperty -Path $Hive.HivePath -Name $Key.Name -PropertyType $Key.PropertyType -Value $Key.PropertyValue -Force | Out-Null
                                 }
                             }
                         }
-                        Else
-                        {
+                        Else {
                             Write-EventLog -EventId 70 -Message "No LanManWorkstation Keys to create / update" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Warning
                             Write-Warning "No LanManWorkstation Keys to create / update"
                         }  
                     }
-                    Else
-                    {
+                    Else {
                         Write-EventLog -EventId 70 -Message "Registry Path not found $($Hive.HivePath)" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Warning
                         Write-Warning "Registry Path not found $($Hive.HivePath)"
                     }
                 }
             }
-            Else
-            {
+            Else {
                 Write-EventLog -EventId 70 -Message "No LanManWorkstation Settings foun" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Warning
                 Write-Warning "No LanManWorkstation Settings found"
             }
         }
-        Else
-        {
+        Else {
             Write-EventLog -EventId 70 -Message "File not found - $NetworkOptimizationsFilePath" -LogName 'Virtual Desktop Optimization' -Source 'NetworkOptimizations' -EntryType Warning
             Write-Warning "File not found - $NetworkOptimizationsFilePath"
         }
@@ -560,38 +459,29 @@ PROCESS {
     #   * change the "Root Certificates Update" policy.
     #   * change the "Enable Windows NTP Client" setting.
     #   * set the "Select when Quality Updates are received" policy
-    If ($Optimizations -contains "LGPO" -or $Optimizations -contains "All")
-    {
+    If ($Optimizations -contains "LGPO" -or $Optimizations -contains "All") {
         $LocalPolicyFilePath = ".\ConfigurationFiles\PolicyRegSettings.json"
-        If (Test-Path $LocalPolicyFilePath)
-        {
+        If (Test-Path $LocalPolicyFilePath) {
             Write-EventLog -EventId 80 -Message "Local Group Policy Items" -LogName 'Virtual Desktop Optimization' -Source 'LGPO' -EntryType Information
             Write-Host "[VDI Optimize] Local Group Policy Items" -ForegroundColor Cyan
             $PolicyRegSettings = Get-Content $LocalPolicyFilePath | ConvertFrom-Json
-            If ($PolicyRegSettings.Count -gt 0)
-            {
+            If ($PolicyRegSettings.Count -gt 0) {
                 Write-EventLog -EventId 80 -Message "Processing PolicyRegSettings Settings ($($PolicyRegSettings.Count) Hives)" -LogName 'Virtual Desktop Optimization' -Source 'LGPO' -EntryType Information
                 Write-Verbose "Processing PolicyRegSettings Settings ($($PolicyRegSettings.Count) Hives)"
-                Foreach ($Key in $PolicyRegSettings)
-                {
-                    If ($Key.VDIState -eq 'Enabled')
-                    {
-                        If (Get-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -ErrorAction SilentlyContinue) 
-                        { 
+                Foreach ($Key in $PolicyRegSettings) {
+                    If ($Key.VDIState -eq 'Enabled') {
+                        If (Get-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -ErrorAction SilentlyContinue) { 
                             Write-EventLog -EventId 80 -Message "Found key, $($Key.RegItemPath) Name $($Key.RegItemValueName) Value $($Key.RegItemValue)" -LogName 'Virtual Desktop Optimization' -Source 'LGPO' -EntryType Information
                             Write-Verbose "Found key, $($Key.RegItemPath) Name $($Key.RegItemValueName) Value $($Key.RegItemValue)"
                             Set-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -Value $Key.RegItemValue -Force 
                         }
-                        Else 
-                        { 
-                            If (Test-path $Key.RegItemPath)
-                            {
+                        Else { 
+                            If (Test-path $Key.RegItemPath) {
                                 Write-EventLog -EventId 80 -Message "Path found, creating new property -Path $($Key.RegItemPath) -Name $($Key.RegItemValueName) -PropertyType $($Key.RegItemValueType) -Value $($Key.RegItemValue)" -LogName 'Virtual Desktop Optimization' -Source 'LGPO' -EntryType Information
                                 Write-Verbose "Path found, creating new property -Path $($Key.RegItemPath) Name $($Key.RegItemValueName) PropertyType $($Key.RegItemValueType) Value $($Key.RegItemValue)"
                                 New-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -PropertyType $Key.RegItemValueType -Value $Key.RegItemValue -Force | Out-Null 
                             }
-                            Else
-                            {
+                            Else {
                                 Write-EventLog -EventId 80 -Message "Error: Creating Name $($Key.RegItemValueName), Value $($Key.RegItemValue) and Path $($Key.RegItemPath)" -LogName 'Virtual Desktop Optimization' -Source 'LGPO' -EntryType Information
                                 Write-Verbose "Error: Creating Name $($Key.RegItemValueName), Value $($Key.RegItemValue) and Path $($Key.RegItemPath)"
                                 New-Item -Path $Key.RegItemPath -Force | New-ItemProperty -Name $Key.RegItemValueName -PropertyType $Key.RegItemValueType -Value $Key.RegItemValue -Force | Out-Null
@@ -601,8 +491,7 @@ PROCESS {
                     }
                 }
             }
-            Else
-            {
+            Else {
                 Write-EventLog -EventId 80 -Message "No LGPO Settings Found!" -LogName 'Virtual Desktop Optimization' -Source 'LGPO' -EntryType Warning
                 Write-Warning "No LGPO Settings found"
             }
@@ -627,42 +516,32 @@ PROCESS {
     #endregion
     
     #region Edge Settings
-    If ($AdvancedOptimizations -contains "Edge" -or $AdvancedOptimizations -contains "All")
-    {
+    If ($AdvancedOptimizations -contains "Edge" -or $AdvancedOptimizations -contains "All") {
         $EdgeFilePath = ".\ConfigurationFiles\EdgeSettings.json"
-        If (Test-Path $EdgeFilePath)
-        {
+        If (Test-Path $EdgeFilePath) {
             Write-EventLog -EventId 80 -Message "Edge Policy Settings" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
             Write-Host "[VDI Advanced Optimize] Edge Policy Settings" -ForegroundColor Cyan
             $EdgeSettings = Get-Content $EdgeFilePath | ConvertFrom-Json
-            If ($EdgeSettings.Count -gt 0)
-            {
+            If ($EdgeSettings.Count -gt 0) {
                 Write-EventLog -EventId 80 -Message "Processing Edge Policy Settings ($($EdgeSettings.Count) Hives)" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
                 Write-Verbose "Processing Edge Policy Settings ($($EdgeSettings.Count) Hives)"
-                Foreach ($Key in $EdgeSettings)
-                {
-                    If ($Key.VDIState -eq 'Enabled')
-                    {
-                        If ($key.RegItemValueName -eq 'DefaultAssociationsConfiguration')
-                        {
+                Foreach ($Key in $EdgeSettings) {
+                    If ($Key.VDIState -eq 'Enabled') {
+                        If ($key.RegItemValueName -eq 'DefaultAssociationsConfiguration') {
                             Copy-Item .\ConfigurationFiles\DefaultAssociationsConfiguration.xml $key.RegItemValue -Force
                         }
-                        If (Get-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -ErrorAction SilentlyContinue) 
-                        { 
+                        If (Get-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -ErrorAction SilentlyContinue) { 
                             Write-EventLog -EventId 80 -Message "Found key, $($Key.RegItemPath) Name $($Key.RegItemValueName) Value $($Key.RegItemValue)" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
                             Write-Verbose "Found key, $($Key.RegItemPath) Name $($Key.RegItemValueName) Value $($Key.RegItemValue)"
                             Set-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -Value $Key.RegItemValue -Force 
                         }
-                        Else 
-                        { 
-                            If (Test-path $Key.RegItemPath)
-                            {
+                        Else { 
+                            If (Test-path $Key.RegItemPath) {
                                 Write-EventLog -EventId 80 -Message "Path found, creating new property -Path $($Key.RegItemPath) -Name $($Key.RegItemValueName) -PropertyType $($Key.RegItemValueType) -Value $($Key.RegItemValue)" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
                                 Write-Verbose "Path found, creating new property -Path $($Key.RegItemPath) Name $($Key.RegItemValueName) PropertyType $($Key.RegItemValueType) Value $($Key.RegItemValue)"
                                 New-ItemProperty -Path $Key.RegItemPath -Name $Key.RegItemValueName -PropertyType $Key.RegItemValueType -Value $Key.RegItemValue -Force | Out-Null 
                             }
-                            Else
-                            {
+                            Else {
                                 Write-EventLog -EventId 80 -Message "Creating Key and Path" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
                                 Write-Verbose "Creating Key and Path"
                                 New-Item -Path $Key.RegItemPath -Force | New-ItemProperty -Name $Key.RegItemValueName -PropertyType $Key.RegItemValueType -Value $Key.RegItemValue -Force | Out-Null 
@@ -672,22 +551,19 @@ PROCESS {
                     }
                 }
             }
-            Else
-            {
+            Else {
                 Write-EventLog -EventId 80 -Message "No Edge Policy Settings Found!" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Warning
                 Write-Warning "No Edge Policy Settings found"
             }
         }
-        Else 
-        {
-           # nothing to do here"
+        Else {
+            # nothing to do here"
         }    
     }
     #endregion
 
     #region Remove Legacy Internet Explorer
-    If ($AdvancedOptimizations -contains "RemoveLegacyIE" -or $AdvancedOptimizations -contains "All")
-    {
+    If ($AdvancedOptimizations -contains "RemoveLegacyIE" -or $AdvancedOptimizations -contains "All") {
         Write-EventLog -EventId 80 -Message "Remove Legacy Internet Explorer" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
         Write-Host "[VDI Advanced Optimize] Remove Legacy Internet Explorer" -ForegroundColor Cyan
         Get-WindowsCapability -Online | Where-Object Name -Like "*Browser.Internet*" | Remove-WindowsCapability -Online 
@@ -695,14 +571,12 @@ PROCESS {
     #endregion
 
     #region Remove OneDrive Commercial
-    If ($AdvancedOptimizations -contains "RemoveOneDrive" -or $AdvancedOptimizations -contains "All")
-    {
+    If ($AdvancedOptimizations -contains "RemoveOneDrive" -or $AdvancedOptimizations -contains "All") {
         Write-EventLog -EventId 80 -Message "Remove OneDrive Commercial" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
         Write-Host "[VDI Advanced Optimize] Removing OneDrive Commercial" -ForegroundColor Cyan
         $OneDrivePath = @('C:\Windows\System32\OneDriveSetup.exe', 'C:\Windows\SysWOW64\OneDriveSetup.exe')   
         $OneDrivePath | ForEach-Object {
-            If (Test-Path $_)
-            {
+            If (Test-Path $_) {
                 Write-Host "`tAttempting to uninstall $_"
                 Write-EventLog -EventId 80 -Message "Commercial $_" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
                 Start-Process $_ -ArgumentList "/uninstall" -Wait
@@ -710,7 +584,7 @@ PROCESS {
         }
 
         Write-EventLog -EventId 80 -Message "Removing shortcut links for OneDrive" -LogName 'Virtual Desktop Optimization' -Source 'AdvancedOptimizations' -EntryType Information
-        Get-ChildItem 'C:\*' -Recurse -Force -EA SilentlyContinue -Include 'OneDrive','OneDrive.*' | Remove-Item -Force -Recurse -EA SilentlyContinue
+        Get-ChildItem 'C:\*' -Recurse -Force -EA SilentlyContinue -Include 'OneDrive', 'OneDrive.*' | Remove-Item -Force -Recurse -EA SilentlyContinue
     }
 
     #endregion
@@ -719,44 +593,43 @@ PROCESS {
     # Delete not in-use files in locations C:\Windows\Temp and %temp%
     # Also sweep and delete *.tmp, *.etl, *.evtx, *.log, *.dmp, thumbcache*.db (not in use==not needed)
     # 5/18/20: Removing Disk Cleanup and moving some of those tasks to the following manual cleanup
-        If ($Optimizations -contains "DiskCleanup" -or $Optimizations -contains "All")
-        {
-            Write-EventLog -EventId 90 -Message "Removing .tmp, .etl, .evtx, thumbcache*.db, *.log files not in use" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
-            Write-Host "Removing .tmp, .etl, .evtx, thumbcache*.db, *.log files not in use"
-            Get-ChildItem -Path c:\ -Include *.tmp, *.dmp, *.etl, *.evtx, thumbcache*.db, *.log -File -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -ErrorAction SilentlyContinue
+    If ($Optimizations -contains "DiskCleanup" -or $Optimizations -contains "All") {
+        Write-EventLog -EventId 90 -Message "Removing .tmp, .etl, .evtx, thumbcache*.db, *.log files not in use" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
+        Write-Host "Removing .tmp, .etl, .evtx, thumbcache*.db, *.log files not in use"
+        Get-ChildItem -Path c:\ -Include *.tmp, *.dmp, *.etl, *.evtx, thumbcache*.db, *.log -File -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -ErrorAction SilentlyContinue
 
-            # Delete "RetailDemo" content (if it exits)
-            Write-EventLog -EventId 90 -Message "Removing Retail Demo content (if it exists)" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
-            Write-Host "Removing Retail Demo content (if it exists)"
-            Get-ChildItem -Path $env:ProgramData\Microsoft\Windows\RetailDemo\* -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -ErrorAction SilentlyContinue
+        # Delete "RetailDemo" content (if it exits)
+        Write-EventLog -EventId 90 -Message "Removing Retail Demo content (if it exists)" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
+        Write-Host "Removing Retail Demo content (if it exists)"
+        Get-ChildItem -Path $env:ProgramData\Microsoft\Windows\RetailDemo\* -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -ErrorAction SilentlyContinue
 
-            # Delete not in-use anything in the C:\Windows\Temp folder
-            Write-EventLog -EventId 90 -Message "Removing all files not in use in $env:windir\TEMP" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
-            Write-Host "Removing all files not in use in $env:windir\TEMP"
-            Remove-Item -Path $env:windir\Temp\* -Recurse -Force -ErrorAction SilentlyContinue -Exclude packer*.ps1
+        # Delete not in-use anything in the C:\Windows\Temp folder
+        Write-EventLog -EventId 90 -Message "Removing all files not in use in $env:windir\TEMP" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
+        Write-Host "Removing all files not in use in $env:windir\TEMP"
+        Remove-Item -Path $env:windir\Temp\* -Recurse -Force -ErrorAction SilentlyContinue -Exclude packer*.ps1
 
-            # Clear out Windows Error Reporting (WER) report archive folders
-            Write-EventLog -EventId 90 -Message "Cleaning up WER report archive" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
-            Write-Host "Cleaning up WER report archive"
-            Remove-Item -Path $env:ProgramData\Microsoft\Windows\WER\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path $env:ProgramData\Microsoft\Windows\WER\ReportArchive\* -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path $env:ProgramData\Microsoft\Windows\WER\ReportQueue\* -Recurse -Force -ErrorAction SilentlyContinue
+        # Clear out Windows Error Reporting (WER) report archive folders
+        Write-EventLog -EventId 90 -Message "Cleaning up WER report archive" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
+        Write-Host "Cleaning up WER report archive"
+        Remove-Item -Path $env:ProgramData\Microsoft\Windows\WER\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $env:ProgramData\Microsoft\Windows\WER\ReportArchive\* -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $env:ProgramData\Microsoft\Windows\WER\ReportQueue\* -Recurse -Force -ErrorAction SilentlyContinue
 
-            # Delete not in-use anything in your %temp% folder
-            Write-EventLog -EventId 90 -Message "Removing files not in use in $env:temp directory" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
-            Write-Host "Removing files not in use in $env:temp directory"
-            Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue -Exclude packer*.ps1
+        # Delete not in-use anything in your %temp% folder
+        Write-EventLog -EventId 90 -Message "Removing files not in use in $env:temp directory" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
+        Write-Host "Removing files not in use in $env:temp directory"
+        Remove-Item -Path $env:TEMP\* -Recurse -Force -ErrorAction SilentlyContinue -Exclude packer*.ps1
 
-            # Clear out ALL visible Recycle Bins
-            Write-EventLog -EventId 90 -Message "Clearing out ALL Recycle Bins" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
-            Write-Host "Clearing out ALL Recycle Bins"
-            Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+        # Clear out ALL visible Recycle Bins
+        Write-EventLog -EventId 90 -Message "Clearing out ALL Recycle Bins" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
+        Write-Host "Clearing out ALL Recycle Bins"
+        Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 
-            # Clear out BranchCache cache
-            Write-EventLog -EventId 90 -Message "Clearing BranchCache cache" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
-            Write-Host "Clearing BranchCache cache" 
-            Clear-BCCache -Force -ErrorAction SilentlyContinue
-        }    #endregion
+        # Clear out BranchCache cache
+        Write-EventLog -EventId 90 -Message "Clearing BranchCache cache" -LogName 'Virtual Desktop Optimization' -Source 'DiskCleanup' -EntryType Information
+        Write-Host "Clearing BranchCache cache" 
+        Clear-BCCache -Force -ErrorAction SilentlyContinue
+    }    #endregion
 
     Set-Location $CurrentLocation
     $EndTime = Get-Date
@@ -764,12 +637,10 @@ PROCESS {
     Write-EventLog -LogName 'Virtual Desktop Optimization' -Source 'VDOT' -EntryType Information -EventId 1 -Message "VDOT Total Run Time: $($ScriptRunTime.Hours) Hours $($ScriptRunTime.Minutes) Minutes $($ScriptRunTime.Seconds) Seconds"
     Write-Host "`n`nThank you from the Virtual Desktop Optimization Team" -ForegroundColor Cyan
 
-    If ($Restart) 
-    {
+    If ($Restart) {
         Restart-Computer -Force
     }
-    Else
-    {
+    Else {
         Write-Warning "A reboot is required for all changes to take effect"
     }
     ########################  END OF SCRIPT  ########################
